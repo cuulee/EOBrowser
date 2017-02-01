@@ -60,7 +60,6 @@ export function createMapLayer(instanceObj, pane, progress) {
   let layer = L.tileLayer.clip(url, {
     showlogo: false,
     tileSize: 512,
-    crs: L.CRS.EPSG4326,
     minZoom: instanceObj.additionalParams.minZoom,
     maxZoom: 16,
     pane: pane,
