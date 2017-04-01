@@ -46,6 +46,11 @@ $textCol: #eee;
   background: rgba(255, 255, 255, .05);
   align-items: center;
 
+  .addToPin {
+    position: absolute;
+    right: 5px;
+    top: 5px;
+  }
   .pathLinkIcon {
     float: right;
     margin-left: 6px;
@@ -87,7 +92,7 @@ $textCol: #eee;
   }
 
   .details {
-    padding-left: 10px;
+    padding: 15px 0 15px 15px;
     box-sizing: border-box;
 
     & > div {

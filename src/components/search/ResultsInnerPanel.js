@@ -1,5 +1,5 @@
 import React, {PropTypes} from 'react'
-import 'style!css!sass!./Results.scss'
+import './Results.scss'
 import NotificationPanel from '../NotificationPanel'
 import ResultItem from './ResultItem'
 import _ from 'lodash'
@@ -21,10 +21,10 @@ class ResultsInnerPanel extends React.Component {
     </div>
   }
 
-  renderWaypoint = (ds) => {
-    if (!_.get(this.props, 'searchParams.isLoading') && _.get(this.props,`searchParams.${ds}.hasMore`)) {
+  renderWaypoint = (ds, isBig) => {
+    if (!this.props.isSearching && _.get(this.props,`searchParams.${ds}.hasMore`)) {
       return (
-        <a className="btn"
+        <a className={isBig && 'btn'}
           onClick={() => this.props.onLoadMore(ds)}>Load more</a>
       );
     }
@@ -38,6 +38,8 @@ class ResultsInnerPanel extends React.Component {
     return <div>
       <div className="resultsHeading">
         {prettyName}: Showing {items.length} {items.length > 1 ? "results": "result"}.
+        {this.renderWaypoint(datasource, false)}
+        {this.props.isSearching && <a><i className="fa fa-spinner fa-spin fa-fw"></i></a> }
       </div>
     </div>
   }
@@ -48,7 +50,7 @@ class ResultsInnerPanel extends React.Component {
     return <div className="resultsInnerPanel">
         {datasource && this.renderHeading(data, datasource)}
         {this.renderItems(items)}
-        {this.renderWaypoint(datasource)}
+        {this.renderWaypoint(datasource, true)}
         {this.props.isSearching && <NotificationPanel msg="Loading more results ..." type='loading' />}
       </div>
   }

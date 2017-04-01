@@ -2,7 +2,7 @@ import React, {PropTypes} from 'react'
 import BandsPanel from './BandsPanel'
 import CodeMirror from './CodeMirror'
 import Store from '../../store'
-import 'style!css!sass!./advanced.scss'
+import './advanced.scss'
 
 
 const ToggleModeButton = ({isScript, onToggle}) => (
@@ -25,8 +25,7 @@ class AdvancedHolder extends React.Component {
       {(isScript) ?
         <CodeMirror
           value={this.props.cmValue}
-          onRefresh={Store.refresh}
-          onUpdate={this.props.onCMupdate}/> :
+          onRefresh={this.props.onRefresh}/> :
         <BandsPanel
           channels={this.props.channels}
           layers={this.props.layers}
@@ -45,7 +44,7 @@ AdvancedHolder.propTypes = {
   onDrag: PropTypes.func,
   onBack: PropTypes.func,
   onToggleMode: PropTypes.func,
-  onCMupdate: PropTypes.func,
+  onRefresh: PropTypes.func,
 };
 
 export default AdvancedHolder;

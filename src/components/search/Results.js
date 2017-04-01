@@ -1,5 +1,5 @@
 import React, {PropTypes} from 'react'
-import 'style!css!sass!./Results.scss'
+import './Results.scss'
 import ResultsInnerPanel from './ResultsInnerPanel'
 import _ from 'lodash'
 

@@ -1,17 +1,18 @@
 import React, {PropTypes} from 'react'
 import moment from 'moment'
 import DatePicker from '../DatePicker'
-import 'style!css!sass!./SearchForm.scss'
+import './SearchForm.scss'
 import NotificationPanel from '../NotificationPanel'
 import ProbaLayer from './ProbaPanel'
 import {Checkbox, CheckboxGroup} from 'react-checkbox-group'
+import _ from 'lodash'
 
 export default class SearchForm extends React.Component {
   constructor(props) {
     super(props);
     this.state = {
       query: {
-        cloudCoverPercentage: 20,
+        cloudCoverPercentage: 100,
         timeFrom: moment().subtract(1, 'months'),
         timeTo: moment(),
         additionalData: "",
@@ -56,10 +57,7 @@ export default class SearchForm extends React.Component {
   }
 
   render() {
-    let {instances, mapZoom, loading} = this.props
-    if (!instances) {
-      return null
-    }
+    let {instances, mapZoom, loading, probaLayer, probaLayers} = this.props
     let maxDate       = moment()
     let from          = this.state.query.timeFrom.format("YYYY-MM-DD")
     let to            = this.state.query.timeTo.format("YYYY-MM-DD")
@@ -67,21 +65,24 @@ export default class SearchForm extends React.Component {
     let preventSearch = loading || zoomSmall || this.state.instances.length === 0
 
     return (<div className="searchForm">
-        <p>Find tiles from various datasources:</p>
-        <div className="searchDatasourceSelect">
-          <CheckboxGroup
-            className="checkboxGroup"
-            name="fruits"
-            value={this.state.selectedInstances}
-            onChange={this.changeDSSelection}>
-            {instances.map((inst, i) => {
-              let name = inst.name
-              return <label key={i}><Checkbox value={name}/>{name}</label>
-            }
-            )}
-          </CheckboxGroup>
+        <div>
+          <p>Find images from these satellites:</p>
+          {instances && instances.length > 0 ? <div className="searchDatasourceSelect">
+            <CheckboxGroup
+              className="checkboxGroup"
+              name="fruits"
+              value={this.state.selectedInstances}
+              onChange={this.changeDSSelection}>
+              {instances.map((inst, i) => {
+                if (inst === undefined) return
+                let name = inst.name
+                return <label key={i}><Checkbox value={name}/>{name}</label>
+              }
+              )}
+            </CheckboxGroup>
+          </div> : <NotificationPanel msg={!instances ? 'Login to load user configurations.' : 'No valid instances. Please contact Sentinel Hub.'} type='info' />}
+          <br/>
         </div>
-        <br/>
         <div>
           <label>Cloud coverage</label>
           <input
@@ -89,14 +90,14 @@ export default class SearchForm extends React.Component {
             placeholder="20"
             min="0"
             max="100"
-            style={{width: '80px', marginLeft: '5px'}}
+            style={{width: '60px', marginLeft: '5px'}}
             defaultValue={this.state.query.cloudCoverPercentage}
             onChange={(e) => this.setState({
               query: {
                 ...this.state.query,
                 cloudCoverPercentage: e.target.value
               }
-            }, this.updateChangeListener)}/> %
+            }, this.updateChangeListener)}/> % <small>(where available)</small>
           <br/>
         </div>
         <label>Select time range</label>
@@ -105,15 +106,19 @@ export default class SearchForm extends React.Component {
           ref='dateFrom'
           className="inlineDatepicker"
           maxDate={maxDate}
+          onNavClick={this.props.onDatePickerNavClick}
           defaultValue={from}
+          onExpand={() => this.props.onExpandDate(true)}
           onSelect={e => this.setTimeFrom(e)}/>
-        <span>-</span>
+        <span className="datePickerSeparator">-</span>
         <DatePicker
           key='dateTo'
           ref='dateTo'
           maxDate={maxDate}
+          onNavClick={this.props.onDatePickerNavClick}
           defaulValue={to}
-          className="inlineDatepicker"
+          onExpand={() => this.props.onExpandDate(false)}
+          className="inlineDatepicker move"
           onSelect={e => this.setTimeTo(e)}/>
         <br/>
         {/* We provide href=javascript: so it gets focus */}
@@ -126,17 +131,18 @@ export default class SearchForm extends React.Component {
           }}
           disabled={preventSearch}
           className="btn">
-          {this.props.loading ? <i className="fa fa-spinner fa-spin fa-fw"></i> : 'Submit'}
+          {this.props.loading ? <i className="fa fa-spinner fa-spin fa-fw"></i> : 'Search'}
         </a>
         {zoomSmall && !this.props.loading && <NotificationPanel msg={`Zoom in to query`} type='error'/>}
         {this.props.error !== '' && <NotificationPanel msg={`An error occurred: ${this.props.error}`} type='error'/>}
         {(this.props.empty && !this.props.loading && !this.state.firstSearch) &&
         <NotificationPanel msg="No results found. Try with different parameters." type='info'/>}
-        <ProbaLayer
-          zoom={this.props.mapZoom}
-          layer={this.props.probaLayer}
+        {!_.isEmpty(probaLayers) && <ProbaLayer
+          zoom={mapZoom}
+          probaLayer={probaLayer}
+          probaLayers={probaLayers}
           onChange={this.props.changeProba}
-        />
+        />}
       </div>
     );
   }
@@ -144,8 +150,12 @@ export default class SearchForm extends React.Component {
 
 SearchForm.propTypes = {
   instances: PropTypes.array,
+  probaLayer: PropTypes.object,
+  probaLayers: PropTypes.object,
   doSearch: PropTypes.func,
   onChange: PropTypes.func,
+  onExpandDate: PropTypes.func,
+  onDatePickerNavClick: PropTypes.func,
   changeProba: PropTypes.func,
   error: PropTypes.string,
   preset: PropTypes.string,

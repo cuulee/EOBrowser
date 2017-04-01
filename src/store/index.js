@@ -1,10 +1,13 @@
-import _                                        from 'lodash'
-import URI                                      from 'urijs'
-import {calcBboxFromXY}        from '../utils/coords'
-import { combineEpics }                         from 'redux-observable';
-import {createEpicMiddleware}                   from 'redux-observable'
-import {createStore, applyMiddleware, compose}  from 'redux'
-import {getMultipliedLayers}    from '../utils/utils'
+import _                                       from 'lodash'
+import URI                                     from 'urijs'
+import {calcBboxFromXY}                        from '../utils/coords'
+import { combineEpics }                        from 'redux-observable';
+import {createEpicMiddleware}                  from 'redux-observable'
+import {createStore, applyMiddleware, compose} from 'redux'
+import {getMultipliedLayers, 
+        getNativeRes, 
+        syncPinsWithLocalStorage,
+        b64EncodeUnicode}                   from '../utils/utils'
 
 // eslint-disable-next-line
 import rxjs from 'rxjs'
@@ -22,6 +25,7 @@ const
   SET_LAYERS =              'SET_LAYERS',
   SET_PRESETS =             'SET_PRESETS',
   SET_PROBA =               'SET_PROBA',
+  SET_PROBA_LAYERS =        'SET_PROBA_LAYERS',
   SET_BASE64_URLS =         'SET_BASE64_URLS',
   SET_MAP_BOUNDS =          'SET_MAP_BOUNDS',
   SET_EVAL_SCRIPT =         'SET_EVAL_SCRIPT',
@@ -31,11 +35,11 @@ const
   SET_LNG=                  'SET_LNG',
   SET_ZOOM =                'SET_ZOOM',
   SET_SIZE =                'SET_SIZE',
-  GENERATE_WMS_URL =        'GENERATE_WMS_URL',
-  GENERATE_FULL_TILE =      'GENERATE_FULL_TILE',
+  GENERATE_IMAGE_LINK =     'GENERATE_IMAGE_LINK',
   REFRESH =                 'REFRESH',
   IS_SEARCHING=             'IS_SEARCHING',
   SET_PATH =                'SET_PATH',
+  SET_TAB_INDEX =           'SET_TAB_INDEX',
   SET_SEARCH_RESULTS=       'SET_SEARCH_RESULTS',
   CLEAR_SEARCH_RESULTS=     'CLEAR_SEARCH_RESULTS',
   SET_COMPARE_MODE=         'SET_COMPARE_MODE',
@@ -43,9 +47,13 @@ const
   SET_FILTER_RESULTS=       'SET_FILTER_RESULTS',
   SET_SELECTED_RESULT=      'SET_SELECTED_RESULT',
   ADD_PIN_RESULT=           'ADD_PIN_RESULT',
+  TOGGLE_ACTIVE_LAYER=      'TOGGLE_ACTIVE_LAYER',
   REMOVE_PIN=               'REMOVE_PIN',
   CLEAR_PINS=               'CLEAR_PINS',
-  SET_ACTIVE_BASE_LAYER =   'SET_ACTIVE_BASE_LAYER'
+  SHOW_LOGIN=               'SHOW_LOGIN',
+  SET_ACTIVE_BASE_LAYER =   'SET_ACTIVE_BASE_LAYER',
+  SET_SELECTED_CRS =        'SET_SELECTED_CRS',
+  SET_DOWNLOADABLE_IMAGE_TYPE = 'SET_DOWNLOADABLE_IMAGE_TYPE'
 
 const Reducers = {
   SET_MAXCC:                (maxcc) => ({ maxcc }),
@@ -64,23 +72,28 @@ const Reducers = {
   SET_BASE64_URLS:          (base64Urls) => ({base64Urls}),
   SET_LAYERS:               setLayers,
   SET_PROBA:                (proba) => ({proba}),
+  SET_PROBA_LAYERS:         (probaLayers) => ({probaLayers}),
   SET_LAT:                  (lat) => ({lat}),
   SET_LNG:                  (lng) => ({lng}),
   SET_INSTANCES:            (instances, user) => ({instances, user}),
   SET_ZOOM:                 (zoom) => ({zoom}),
+  SET_TAB_INDEX:            (mainTabIndex) => ({mainTabIndex}),
   SET_SIZE:                 (size) => ({size}),
   SET_COMPARE_MODE:         (compareMode) => ({compareMode}),
   SET_COMPARE_MODE_TYPE:    (compareModeType) => ({compareModeType}),
   SET_CURRENT_DATE:         (currentDate) => ({currentDate}),
-  GENERATE_WMS_URL:         generateWmsUrl,
-  GENERATE_FULL_TILE:       generateTileTiffUrl,
+  TOGGLE_ACTIVE_LAYER:      (isActiveLayerVisible) => ({isActiveLayerVisible}),
+  GENERATE_IMAGE_LINK:      generateImageLink,
   SET_PATH:                 updatePath,
   ADD_PIN_RESULT:           addPinResult,
   REMOVE_PIN:               removePin,
-  CLEAR_PINS:               () => ({pinResults: []}),
+  CLEAR_PINS:               clearPins,
   REFRESH:                  (doRefresh) => ({doRefresh}),
   SET_ACTIVE_BASE_LAYER:    setActiveBaseLayer,
+  SET_SELECTED_CRS:         (selectedCrs) => ({selectedCrs}),
+  SET_DOWNLOADABLE_IMAGE_TYPE: (downloadableImageType) => ({downloadableImageType}),
   IS_SEARCHING:             (isSearching) => ({isSearching}),
+  SHOW_LOGIN:               (showLogin) => ({showLogin}),
   SET_FILTER_RESULTS:       (searchFilterResults) => ({searchFilterResults}),
   SET_SELECTED_RESULT:      (selectedResult) => ({selectedResult}),
   SET_SEARCH_RESULTS:       setSearchResults,
@@ -88,7 +101,7 @@ const Reducers = {
 }
 
 const DoesNeedRefresh = [
-  SET_MAXCC, SET_DATE, SET_PRESET, SET_LAYERS, SET_PROBA, SET_SELECTED_RESULT, SET_CURR_VIEW
+  SET_PRESET, SET_LAYERS, SET_PROBA, SET_SELECTED_RESULT, SET_EVAL_SCRIPT
 ]
 const DoRefreshUrl = [
   SET_LAT, SET_LNG, SET_ZOOM, SET_EVAL_SCRIPT, SET_MAXCC, SET_DATE, SET_PRESET, SET_LAYERS,SET_CURR_VIEW, SET_SELECTED_RESULT
@@ -108,7 +121,7 @@ function setChannels(datasource, channels) {
 }
 
 function setPreset(datasource, preset) {
-  let currView = preset === 'CUSTOM' ? this.views.BANDS : this.views.PRESETS
+  const currView = preset === 'CUSTOM' ? this.views.BANDS : this.views.PRESETS
   return {
     currView: _.merge(this.currView, {[datasource]: currView}),
     preset: _.merge(this.preset, {[datasource]: preset}),
@@ -116,8 +129,9 @@ function setPreset(datasource, preset) {
   }
 }
 function setPresets(datasource, presets) {
-  let preset = Object.keys(presets)[0]
-  let currView = preset === 'CUSTOM' ? this.views.BANDS : this.views.PRESETS
+  const preset = Object.keys(presets)[0]
+  const currView = preset === 'CUSTOM' ? this.views.BANDS : this.views.PRESETS
+
   return {
     currView: _.merge(this.currView, {[datasource]: currView}),
     preset: _.merge(this.preset, {[datasource]: preset}),
@@ -131,57 +145,84 @@ function setCurrentView(datasource, currView) {
 }
 function setEvalscript(datasource, evalscript) {
   return {
-    evalscript: _.merge(this.evalscript, {[datasource]: evalscript})
+    evalscript: _.merge(this.evalscript, {[datasource]: evalscript})  
   }
 }
 function setLayers(datasource, layers) {
+  let script = b64EncodeUnicode("return [" + getMultipliedLayers(this.layers[datasource]) + "]")
+
   return {
-    evalscript: _.merge(this.evalscript, {[datasource]: btoa("return [" + getMultipliedLayers(this.layers[datasource]) + "]")}),
+    evalscript: _.merge(this.evalscript, {[datasource]: script}),
+    // selectedResult: _.merge(this.selectedResult, {layers: layers, evalscript: script}),
     layers: _.merge(this.layers, {[datasource]: layers})
   }
 }
-function addPinResult() {
+
+function addPinResult(item) {
   let array = this.pinResults
-  let pinItem = _.clone(this.selectedResult)
-  pinItem.preset = this.preset[this.datasource]
-  if (this.preset[this.datasource] === 'CUSTOM') {
-    pinItem.layers = this.layers[this.datasource]
-    pinItem.evalscript = this.evalscript[this.datasource]
-  }
+  let pinItem = _.clone(item)
+  // all logic has been moved to AddPin.js#buildPinObject
   array.unshift(pinItem)
+  let result = array
+
+  syncPinsWithLocalStorage(result)
+
   return {
-    pinResults: array
-  }
+    pinResults: result
+  };
 }
 function removePin(index) {
+  let result = this.pinResults.filter((obj, i) =>
+    i !== index
+  )
+  
+  syncPinsWithLocalStorage(result)
+
   return {
-    pinResults: this.pinResults.filter((obj, i) =>
-      i !== index
-    )
+    pinResults: result
+  }
+}
+function clearPins() {
+  let result = []
+
+  syncPinsWithLocalStorage(result)
+
+  return {
+    pinResults: result
   }
 }
 
 function setBoundsAdSquarePerMeter(bounds, pixelBounds) {
-  let equatorLength = 40075016.685578488
-  let unitsToMetersRatio = 360 / (equatorLength * Math.cos(this.lat * Math.PI / 180))
-  let bboxH = bounds._northEast.lat - bounds._southWest.lat
-  let bboxW = bounds._northEast.lng - bounds._southWest.lng
-  let imageWidth = bboxW / (unitsToMetersRatio * 10)
-  let imageHeight = bboxH / (unitsToMetersRatio * 10)
+  const equatorLength = 40075016.685578488
+  const unitsToMetersRatio = 360 / (equatorLength * Math.cos(this.lat * Math.PI / 180))
+  const bboxH = bounds._northEast.lat - bounds._southWest.lat
+  const bboxW = bounds._northEast.lng - bounds._southWest.lng
+  let res = getNativeRes()
+  const imageWidth = bboxW / (unitsToMetersRatio * res)
+  const imageHeight = bboxH / (unitsToMetersRatio * res)
   return {
     mapBounds: bounds,
-    squaresPerMtr: Math.ceil(imageWidth) * Math.ceil(imageHeight)
+    squaresPerMtr: [Math.ceil(imageWidth), Math.ceil(imageHeight)]
   }
-  // return {meterPerPx: this.metersPerPx = 40075016.686 * Math.abs(Math.cos(this.center.lat * 180/Math.PI)) / Math.pow(2, this.zoom+8)}
 }
 
 function updatePath() {
-  const store = this
   let params = []
-  params.push(`lat=${ store.lat }`)
-  params.push(`lng=${ store.lng }`)
-  params.push(`zoom=${ store.zoom }`)
-  const path = params.join('/')
+  params.push(`lat=${ this.lat }`)
+  params.push(`lng=${ this.lng }`)
+  params.push(`zoom=${ this.zoom }`)
+  
+  if (!_.isEmpty(this.selectedResult) && this.isActiveLayerVisible) {
+    params.push(`datasource=${ encodeURIComponent(this.selectedResult.name) }`)
+    params.push(`time=${ this.selectedResult.properties.rawData.time }`)
+    params.push(`preset=${this.preset[this.selectedResult.name]}`)
+    if (this.selectedResult.preset === 'CUSTOM') {
+      params.push(`layers=${_.values(this.layers[this.datasource]).join(",")}`)
+      params.push(`evalscript=${this.evalscript[this.datasource]}`)
+    }
+  }
+  
+  const path = params.join('&')
   window.location.hash = path
   return {path}
 }
@@ -209,64 +250,76 @@ function clearSearchResults() {
   }
 }
 
-function generateWmsUrl() {
-  if (_.isEmpty(this.selectedResult)) {
-    return {imgWmsUrl : ''}
-  }
+function generateImageLink(tiff = false) {
+  // isEmpty
+  let isEmpty = _.isEmpty(this.selectedResult)
+  
+  if(isEmpty && tiff) return {imgTiffUrl : ''}
+  if(isEmpty && !tiff) return {imgWmsUrl : ''}
+
+  // vars
   let activeLayer = _.find(this.instances, {name: this.selectedResult.name})
-  let baseUrl = activeLayer.additionalParams.wmsUrl + "?SERVICE=WMS&REQUEST=GetMap"
-  const url = new URI(baseUrl)
   let time = this.selectedResult.properties.rawData.time
 
-  url.addQuery('MAXCC', this.maxcc)
-  url.addQuery('SHOWLOGO', true)
-  url.addQuery('LAYERS', this.preset[this.datasource] === 'CUSTOM' ? _.values(this.layers[this.datasource]).join(",") : this.preset[this.datasource])
-  url.addQuery('GAIN', this.gain)
-  url.addQuery('CLOUDCORRECTION', this.cloudCorrection)
-  url.addQuery('WIDTH', this.size[0] - 50)
-  url.addQuery('HEIGHT', this.size[1] - 100)
-  url.addQuery('COLCOR', `${this.colCor},BOOST`)
-  url.addQuery('NICENAME', `${activeLayer.name} from ${time}.jpg`)
-  url.addQuery('FORMAT', 'image/jpeg')
-  url.addQuery('BGCOLOR', '00000000')
-  url.addQuery('TRANSPARENT', '1')
-  url.addQuery('TIME', `${time}/${time}`)
-  url.addQuery('BBOX', calcBboxFromXY([this.lat, this.lng], this.zoom).join(','))
-  if (this.evalscript[this.datasource] !== '' && this.preset[this.datasource] === 'CUSTOM') {
-    url.addQuery('EVALSCRIPT', this.evalscript[this.datasource])
-    url.addQuery('EVALSOURCE', activeLayer.additionalParams.evalsource)
-  }
-  const browserUrl = url.toString().replace(/%2f/gi, '/').replace(/%2c/gi, ',')
-  return {imgWmsUrl: browserUrl}
-}
-function generateTileTiffUrl() {
-  if (_.isEmpty(this.selectedResult)) {
-    return {imgTiffUrl : ''}
-  }
-  let time = this.selectedResult.properties.rawData.time
-  let activeLayer = _.find(this.instances, {name: this.selectedResult.name})
   let baseUrl = activeLayer.additionalParams.wmsUrl
-  baseUrl = baseUrl.replace("wms", "wcs")
-  baseUrl += "?SERVICE=WCS&REQUEST=GetCoverage"
+  if(tiff) {
+    baseUrl = baseUrl.replace("wms", "wcs")
+    baseUrl += '?SERVICE=WCS&REQUEST=GetCoverage'
+  } else {
+    baseUrl += '?SERVICE=WMS&REQUEST=GetMap'
+  }
   const url = new URI(baseUrl)
 
-  url.addQuery('SHOWLOGO', true)
-  url.addQuery('MAXCC', this.maxcc)
-  url.addQuery('COVERAGE', this.preset[this.datasource] === 'CUSTOM' ? _.values(this.layers[this.datasource]).join(",") : this.preset[this.datasource])
-  url.addQuery('RESX', 10)
-  url.addQuery('RESX', 10)
-  url.addQuery('FORMAT', 'image/tiff;depth=16')
-  url.addQuery('CRS', 'EPSG:3857')
+  let res
+  if(tiff)
+    res = getNativeRes()
+  
+  // build url
+  url.addQuery('SHOWLOGO', false)
+  url.addQuery('MAXCC', 100)
   url.addQuery('TIME', `${time}/${time}`)
-  url.addQuery('NICENAME', `${activeLayer.name} from ${time}.tiff`)
-  url.addQuery('BBOX', calcBboxFromXY([this.lat, this.lng], this.zoom).join(','))
+  url.addQuery('CRS', !tiff ? 'EPSG:3857' : this.selectedCrs) 
+  if(this.selectedCrs === 'EPSG:4326' && tiff) {
+    url.addQuery('BBOX', this.mapBounds.toBBoxString().split(",").reverse().join(","))
+  } else {
+    url.addQuery('BBOX', calcBboxFromXY([this.lat, this.lng], this.zoom).join(','))
+  }
   if (this.evalscript[this.datasource] !== '' && this.preset[this.datasource] === 'CUSTOM') {
     url.addQuery('EVALSCRIPT', this.evalscript[this.datasource])
     url.addQuery('EVALSOURCE', activeLayer.additionalParams.evalsource)
   }
 
-  const tiffUrl = url.toString().replace(/%2f/gi, '/').replace(/%2c/gi, ',')
-  return {imgTiffUrl: tiffUrl}
+  if(tiff) {
+    url.addQuery('NICENAME', `${activeLayer.name} from ${time}.tiff`)
+    url.addQuery('COVERAGE', this.preset[this.datasource] === 'CUSTOM' ? _.values(this.layers[this.datasource]).join(",") : this.preset[this.datasource])
+    url.addQuery('RESX', res+"m")
+    url.addQuery('RESY', res+"m")
+    url.addQuery('FORMAT', 'image/tiff;depth=16')
+  } else {
+    url.addQuery('NICENAME', `${activeLayer.name} from ${time}.jpg`)
+    url.addQuery('LAYERS', this.preset[this.datasource] === 'CUSTOM' ? _.values(this.layers[this.datasource]).join(",") : this.preset[this.datasource])
+    url.addQuery('GAIN', this.gain)
+    url.addQuery('CLOUDCORRECTION', this.cloudCorrection)
+    url.addQuery('WIDTH', this.size[0] - 50)
+    url.addQuery('HEIGHT', this.size[1] - 100)
+    url.addQuery('FORMAT', 'image/jpeg')
+    url.addQuery('BGCOLOR', '00000000')
+    url.addQuery('TRANSPARENT', '1')
+  }
+
+  // return
+  if(tiff) {
+    const tiffUrl = url.toString().replace(/%2f/gi, '/').replace(/%2c/gi, ',')
+    return {imgTiffUrl: tiffUrl}
+  } else {
+    const browserUrl = url.toString().replace(/%2f/gi, '/').replace(/%2c/gi, ',')
+    let proxyUrl = process.env.REACT_APP_PROXY_URL 
+    let imageType = '.jpg' // could also be set to '.jpg' 
+    let proxyLink = `${proxyUrl}/${encodeURIComponent(browserUrl)}${imageType}`
+    return {imgWmsUrl: proxyLink} 
+  }
+
+  // fin.
 }
 
 function mustRefresh(actions) {
@@ -303,7 +356,7 @@ function action(x) {
   return (...args) => store.dispatch({type: x, args})
 }
 
-module.exports = {
+export default {
   get current() {
     return store.getState()
   },
@@ -333,11 +386,13 @@ module.exports = {
   setLng:               action(SET_LNG),
   setZoom:              action(SET_ZOOM),
   setSize:              action(SET_SIZE),
+  setTabIndex:          action(SET_TAB_INDEX),
   refresh:              action(REFRESH),
-  generateWmsUrl:       action(GENERATE_WMS_URL),
-  generateFullTile:     action(GENERATE_FULL_TILE),
+  toggleActiveLayer:    action(TOGGLE_ACTIVE_LAYER),
+  generateImageLink:    action(GENERATE_IMAGE_LINK),
   setActiveBaseLayer:   action(SET_ACTIVE_BASE_LAYER),
   setProbaParams:       action(SET_PROBA),
+  setProbaLayers:       action(SET_PROBA_LAYERS),
   setSearchingIsOn:     action(IS_SEARCHING),
   setSearchResults:     action(SET_SEARCH_RESULTS),
   clearSearchResults:   action(CLEAR_SEARCH_RESULTS),
@@ -348,5 +403,8 @@ module.exports = {
   setCompareModeType:   action(SET_COMPARE_MODE_TYPE),
   clearPins:            action(CLEAR_PINS),
   removePin:            action(REMOVE_PIN),
-  addPinResult:         action(ADD_PIN_RESULT)
+  addPinResult:         action(ADD_PIN_RESULT),
+  showLogin:            action(SHOW_LOGIN),
+  setSelectedCrs:       action(SET_SELECTED_CRS),
+  setDownloadableImageType: action(SET_DOWNLOADABLE_IMAGE_TYPE)
 }

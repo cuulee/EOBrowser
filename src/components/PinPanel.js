@@ -4,6 +4,43 @@ import Pin from './Pin'
 import {RadioGroup, Radio} from 'react-radio-group'
 
 class PinPanel extends React.Component {
+  constructor(props) {
+    super(props)
+    this.state = {
+      pins: []
+    }
+  }
+  
+  componentDidMount() {
+    window.addEventListener('resize', this.handleResize.bind(this), false)
+  }
+
+  componentWillUnmount() {
+    window.removeEventListener('resize', this.handleResize, false)
+  }
+
+  handleResize() {   
+    // for each pin trigger change
+    let pins = this.state.pins
+    pins.forEach(item => {
+      item.onChange(null)
+    })
+  }
+
+  handlePinMount(pin) {
+    let pins = this.state.pins
+    pins.push(pin)
+
+    this.setState({pins})
+  }
+
+  handlePinUnmount(pin) {
+    let pins = this.state.pins
+    let index = pins.indexOf(pin)
+
+    pins.splice(index, 1)
+    this.setState({pins})
+  }
 
   render() {
     let {items, isCompare, isOpacity, onToggleCompareMode, onRemove, onCompare, onClearPins} = this.props
@@ -23,8 +60,10 @@ class PinPanel extends React.Component {
               </div>}
           </div>
           {items.map((item, i) => {
-            let rawData = item.properties.rawData
+            // if we add pin from results, we have different structure, otherwise we have all the data
+            let rawData = item.properties ? item.properties.rawData : item
             return <Pin
+              ref={'pin' + i}
               range={[0,1]}
               rawData={rawData}
               item={item}
@@ -32,9 +71,12 @@ class PinPanel extends React.Component {
               key={i}
               isOpacity={isOpacity}
               onRemove={onRemove}
+              onZoomToPin={this.props.onZoomToPin}
               isCompare={isCompare}
               onPinClick={() => this.props.onPinClick(item, i, false)}
               onOpacityChange={(e) => this.props.onOpacityChange(e, i)}
+              onComponentDidMount={this.handlePinMount.bind(this)}
+              onComponentWillUnmount={this.handlePinUnmount.bind(this)}
               />
           })
           }

@@ -65,15 +65,31 @@ class MyDatePicker extends React.Component {
                   showClock={false}
                   strict={false}
                   clearIcon={false}
+                  onExpand={this.props.onExpand}
                   expanded={this.state.isDateVisible}
                   minDate={this.props.minDate || Store.current.minDate}
                   maxDate={this.props.maxDate || Store.current.maxDate}
                   defaultValue={this.props.defaultValue || Store.current.dateTo}
+                  value={this.props.value}
                 >
                         <MonthView
                           onChange={this.onDayPicked}
+                          onNavClick={ (dir,date) => {
+                              let newDateFrom, newDateTo
+                              if ([-2, 2].includes(dir)) {
+                                if (dir === -2) dir = -1
+                                if (dir === 2) dir = 1
+                                newDateFrom = moment(date).add(dir, 'years').startOf('month').format("YYYY-MM-DD")
+                                newDateTo = moment(date).add(dir, 'years').endOf('month').format("YYYY-MM-DD")
+                              } else {
+                                newDateFrom = moment(date).add(dir, 'months').startOf('month').format("YYYY-MM-DD")
+                                newDateTo = moment(date).add(dir, 'months').endOf('month').format("YYYY-MM-DD")
+                              }
+                              this.props.onNavClick(newDateFrom, newDateTo)
+                            }
+                          }
                           theme={null}
-                          onRenderDay={this.onDay}
+                          onRenderDay={this.props.onDay || this.onDay}
                           highlightWeekends={true}
                           highlightToday={true}
                           weekNumbers={false}
@@ -87,6 +103,8 @@ class MyDatePicker extends React.Component {
 }
 MyDatePicker.PropTypes = {
   onSelect: React.PropTypes.func,
+  onExpand: React.PropTypes.func.isRequired,
+  onNavClick: React.PropTypes.func,
   noHighlight: React.PropTypes.bool,
   defaultValue: React.PropTypes.oneOfType([React.PropTypes.string, React.PropTypes.object])
 }

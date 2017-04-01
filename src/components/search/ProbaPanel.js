@@ -3,17 +3,19 @@ import NotificationPanel from '../NotificationPanel'
 import DatePicker from '../DatePicker'
 import moment from 'moment'
 import Toggle from 'react-toggle'
+import _ from 'lodash'
 
 class ProbaLayer extends React.Component {
 
   constructor(props) {
     super(props)
+    const firstLayer = this.props.probaLayer.wmtsParams.additionalParams.layers[0]
     this.state = {
       open: false,
       show: false,
       zoom: this.props.zoom,
-      date: moment().subtract(2, "days").format("YYYY-MM-DD"),
-      activeLayer: this.props.layer.wmtsParams.additionalParams.layers[0]
+      date: _.last(this.props.probaLayers[firstLayer].dates),
+      activeLayer: firstLayer,
     }
   }
 
@@ -26,14 +28,20 @@ class ProbaLayer extends React.Component {
   getProbaLayers = () => (
       <select defaultValue={this.state.activeLayer}
               onChange={this.changeDSSelection}>
-        {this.props.layer.options.additionalParams.layers.map(name => (
+        {this.props.probaLayer.options.additionalParams.layers.map(name => (
           <option key={name} value={name}>{name}</option>
         ))}
       </select>
   )
 
   changeDSSelection = (e) => {
-    this.setState({activeLayer: e.target.value}, this.update)
+    const layer = e.target.value,
+          activeLayerDates = this.props.probaLayers[layer].dates,
+          date  = activeLayerDates.includes(moment(this.state.date).format("YYYY-MM-DD")) ? this.state.date : _.last(activeLayerDates)
+    this.setState({
+      activeLayer: layer,
+      date: date
+    }, this.update)
   }
   update = () => {
     this.props.onChange && this.props.onChange(this.state)
@@ -43,9 +51,18 @@ class ProbaLayer extends React.Component {
     this.setState({date: e}, this.update)
   }
 
+  onDay = (props) => {
+    if (this.props.probaLayers[this.state.activeLayer].dates.includes(props.dateMoment.format("YYYY-MM-DD"))) {
+      props.className += ' hasData'
+    }
+    return props
+  }
 
   render() {
-    let {options} = this.props.layer
+    let {options} = this.props.probaLayer
+    let {[this.state.activeLayer]: {
+      dates
+    }} = this.props.probaLayers
     return <div className="probaPanel">
       <b>Show Proba-V</b>
       <Toggle
@@ -58,10 +75,14 @@ class ProbaLayer extends React.Component {
         noHighlight={true}
         key='dateTo'
         ref='dateTo'
-        defaultValue={this.state.date}
-        minDate={options.additionalParams.dateRange[0]}
-        maxDate={options.additionalParams.dateRange[1]}
+        onNavClick={() => {}}
+        onExpand={() => {}}
+        minDate={dates[0]}
+        maxDate={_.last(dates)}
         className="inlineDatepicker"
+        value={this.state.date}
+        defaultValue={this.state.date}
+        onDay={this.onDay}
         onSelect={this.changeDate}/>
       {this.state.zoom > options.maxZoom && this.state.show && <NotificationPanel msg="Zoom out to view Proba-V." type="info" />}
     </div>
@@ -69,7 +90,8 @@ class ProbaLayer extends React.Component {
 }
 ProbaLayer.PropTypes = {
   zoom: React.PropTypes.number.isRequired,
-  layer: React.PropTypes.object.isRequired,
+  probaLayer: React.PropTypes.object.isRequired,
+  probaLayers: React.PropTypes.object.isRequired,
   onChange: React.PropTypes.func.isRequired
 }
 

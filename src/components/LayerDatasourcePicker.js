@@ -3,6 +3,7 @@ import {map} from 'lodash'
 import AdvancedHolder from './advanced/AdvancedHolder'
 import WMSImage from './WMSImage'
 import _ from 'lodash'
+import {getActivePreset} from '../utils/utils'
 
 class LayerDatasourcePicker extends React.Component {
 
@@ -23,19 +24,19 @@ class LayerDatasourcePicker extends React.Component {
   }
 
   getSimpleHolder() {
-    let {preset, presets} = this.props
+    let {presets} = this.props
     return (<div className="layerDatasourcePicker">
       {
         (_.get(this, 'props.channels.length') > 0 && <a key={0} onClick={() => {
             this.props.onActivate('CUSTOM')
-          }} className={(preset === 'CUSTOM') ? "active" : ""}>
+          }} className={(getActivePreset() === 'CUSTOM') ? "active" : ""}>
             <i className='icon fa fa-paint-brush'></i>Custom<small>Create custom rendering</small>
           </a>)
       }
 
       {
         map(presets, (obj, key) => {
-          return <a key={key} onClick={() => { this.props.onActivate(key) }} className={(preset === key) ? "active" : ""}>
+          return <a key={key} onClick={() => { this.props.onActivate(key) }} className={(getActivePreset() === key) ? "active" : ""}>
             <WMSImage
               onBase64Gen={(b) => {}}
               alt={obj.name}
@@ -51,18 +52,16 @@ class LayerDatasourcePicker extends React.Component {
   render() {
     let isBasic = this.props.isBasicMode
     return (<div>
-      <div style={{display: isBasic ? 'block' : 'none'}}>{this.getSimpleHolder()}</div>
-      {_.get(this, 'props.channels.length') > 0 && (
-        <AdvancedHolder
+      {isBasic ? this.getSimpleHolder() : <AdvancedHolder
           isScript={this.props.isScript}
           layers={this.props.layers}
           cmValue={this.props.cmValue}
           onBack={this.props.onBack}
           onDrag={this.props.onDrag}
-          onCMupdate={this.props.onCMupdate}
+          onRefresh={this.props.onCMRefresh}
           onToggleMode={this.props.onToggleMode}
-          channels={this.props.channels}
-          style={{display: !isBasic ? 'block' : 'none'}}/>)}
+          channels={this.props.channels}/>}
+
     </div>)
   }
 }
@@ -71,7 +70,6 @@ LayerDatasourcePicker.propTypes = {
   base64Urls: PropTypes.object,
   isScript: PropTypes.bool.isRequired,
   datasource: PropTypes.string,
-  preset: PropTypes.string,
   cmValue: PropTypes.string,
   presets: PropTypes.object,
   channels: PropTypes.array,
@@ -80,7 +78,7 @@ LayerDatasourcePicker.propTypes = {
   onDrag: PropTypes.func,
   onBack: PropTypes.func,
   onToggleMode: PropTypes.func,
-  onCMupdate: PropTypes.func,
+  onCMRefresh: PropTypes.func,
   onWriteBase64: PropTypes.func,
   isBasicMode: PropTypes.bool
 };

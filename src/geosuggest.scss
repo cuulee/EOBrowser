@@ -21,6 +21,7 @@
   line-height: 30px;
   -webkit-transition: border 0.2s, box-shadow 0.2s;
   transition: border 0.2s, box-shadow 0.2s;
+  margin-bottom: 0;
 }
 .geosuggest__input:focus {
   box-shadow: 0 0 0 transparent;

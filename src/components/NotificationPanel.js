@@ -17,18 +17,21 @@ const NotificationPanel = ({type, msg, html}) => {
       case 'loading':
         icon = 'spinner fa-spin fa-fw'
         break
+      case 'nothing':
+        icon = ''
+        break
       default:
         break
     }
 
     return <div className="notification">
-      <i className={`fa fa-${icon}`} style={{marginRight: '6px'}}></i>
+      {icon !== '' && <i className={`fa fa-${icon}`} style={{marginRight: '6px'}}></i>}
       {html && <span dangerouslySetInnerHTML={{__html: msg }}></span>}
       {!html && msg}
     </div>
   }
  NotificationPanel.propTypes = {
-    type: PropTypes.oneOf(['error','ok', 'info', 'warning', 'loading']).isRequired,
+    type: PropTypes.oneOf(['error','ok', 'info', 'warning', 'loading', 'nothing']).isRequired,
     msg: PropTypes.string.isRequired,
     html: PropTypes.bool
 }

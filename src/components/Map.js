@@ -4,14 +4,12 @@ import L from 'leaflet'
 import _ from 'lodash'
 import NProgress from 'nprogress'
 import {queryAvailableDates} from '../utils/ajax'
-import {getCoordsFromBounds, createMapLayer} from '../utils/utils'
+import {getCoordsFromBounds, createMapLayer, getActivePreset, evalSourcesMap, isCustom, getLayersString} from '../utils/utils'
 import './ext/leaflet-clip-wms-layer'
 import Store from '../store'
 import {connect} from 'react-redux'
 import 'nprogress/nprogress.css'
 import gju from 'geojson-utils'
-import errorTileBg from './brokenImage.png'
-
 
 const styles = {
   map: {
@@ -63,14 +61,14 @@ class RootMap extends React.Component {
       name: 'Open Street Map'
     })
     var baseMaps = {
-      "Open Stree Map": osm,
+      "Open Street Map": osm,
     };
 
     this.mainMap  = L.map(mapId, {
       center: [lat, lng],
       zoom: zoom,
       minZoom: 3,
-      layers: [osm]
+      layers: [osm],
     })
     this.mainMap.createPane(compareLayerLbl)
     this.mainMap.createPane(activeLayerLbl)
@@ -84,12 +82,14 @@ class RootMap extends React.Component {
     this.mainMap.zoomControl.setPosition('bottomright')
     this.mainMap.on('moveend', _.throttle(() => {
       Store.setMapBounds(this.mainMap.getBounds(), this.mainMap.getPixelBounds())
-      this.handleMoveEnd()
     }), 4000)
     this.mainMap.on('move', () => {
       Store.setLat(this.mainMap.getCenter().lat)
       Store.setLng(this.mainMap.getCenter().wrap().lng)
       Store.setZoom(this.mainMap.getZoom())
+    })
+    this.mainMap.on('resize', () => {
+      this.resetAllLayers()
     })
 
     L.control.scale({
@@ -101,12 +101,27 @@ class RootMap extends React.Component {
     this.mainMap.setView([Store.current.lat, Store.current.lng], Store.current.zoom)
     Store.setMapBounds(this.mainMap.getBounds(), this.mainMap.getPixelBounds())
     this.setState({isLoaded: true})
-    this.handleMoveEnd()
+
+    this.visualizeLayer()
+  }
+
+  addRemoveActiveLayer(show) {
+    this.activeLayer && (!show ? this.mainMap.removeLayer(this.activeLayer) : this.activeLayer.addTo(this.mainMap))
   }
 
   componentDidUpdate(prevProps, prevState) {
+    const {mainTabIndex} = Store.current
     if (_.get(this, 'props.action.type') === 'REFRESH') {
       this.visualizeLayer()
+    }
+    // check tab switching
+    if (prevProps.mainTabIndex !== mainTabIndex) {
+      this.addRemoveActiveLayer(mainTabIndex === 2)
+      this.togglePolygons(mainTabIndex === 1)
+      this.addPinLayers()
+    }
+    if (_.get(this, 'props.action.type') === 'TOGGLE_ACTIVE_LAYER') {
+      this.addRemoveActiveLayer(Store.current.isActiveLayerVisible)
     }
     if (!_.isEqual(Store.current.proba, prevProps.proba)) {
       this.updateProba()
@@ -134,6 +149,14 @@ class RootMap extends React.Component {
   resetLayerParams(layer) {
     layer.setClip(L.bounds([ 0,0], [window.innerWidth, window.innerHeight]))
     layer.setOpacity(1)
+  }
+
+  resetAllLayers() {
+    this.mainMap.eachLayer(layer => {
+      if (layer.options.clip && !Store.current.compareMode) {
+        this.resetLayerParams(layer)
+      }
+    })
   }
 
   updatePosition() {
@@ -183,10 +206,6 @@ class RootMap extends React.Component {
   }
 
   onEachPolygon = (feature, layer) => {
-    let popupContent = feature.properties.popupContent
-    layer.bindPopup(popupContent, {
-      maxWidth: 400
-    });
     layer.on({
       mouseover: this.highlightFeature, 
       mouseout: this.resetHighlight,
@@ -237,17 +256,20 @@ class RootMap extends React.Component {
   }
 
   activateTile = (i, activate, geom, useOwnPreset) => {
-    this.resetHighlight()
-    let layersArray = Object.keys(this.polyHighlight._layers)
+    if(this.polyHighlight) this.resetHighlight()
+
+    let layersArray = []
+    if(this.polyHighlight && this.polyHighlight._layers != undefined)
+      layersArray = Object.keys(this.polyHighlight._layers)
+    
     if (activate) {
       let itemPreset = ''
       let {datasource: ds} = geom.properties.rawData
       Store.setDatasource(ds)
       let item = Store.current.pinResults[i]
-      let isCustom = item && item.preset === 'CUSTOM'
       if (useOwnPreset) {
         itemPreset = item.preset
-        if (isCustom) {
+        if (isCustom(item)) {
           Store.setLayers(ds, item.layers)
           item.evalscript && item.evalscript !=='' && Store.setEvalScript(ds, item.evalscript)
         }
@@ -255,26 +277,18 @@ class RootMap extends React.Component {
       let preset = useOwnPreset ? itemPreset : Object.keys(Store.current.presets[ds])[0]
       Store.setPreset(ds, preset)
       geom.preset = preset
-      if (!isCustom) {
-        geom.name = Store.current.datasource
-      }
-      Store.setSelectedResult(geom)
+      geom.name = Store.current.datasource
       this.togglePolygons(false)
       return
     }
-    this.polyHighlight._layers[layersArray[i]].setStyle(Store.current.highlightPolyStyle)
+    
+    if(this.polyHighlight && this.polyHighlight._layers != undefined)
+      this.polyHighlight._layers[layersArray[i]].setStyle(Store.current.highlightPolyStyle)
   }
 
-  isCustom(obj) {
-    return this.getActivePreset(obj) === 'CUSTOM'
-  }
-
-  getActivePreset(obj) {
-    return obj ? obj.preset : Store.current.preset[Store.current.selectedResult.name]
-  }
-
-  getLayersString(obj) {
-    return this.isCustom(obj) ? _.values(obj ? obj.layers : Store.current.layers[Store.current.selectedResult.name]).join(",") : this.getActivePreset(obj)
+  onZoomToPin(item) {
+    if(item && item.map)
+      this.mainMap.setView(L.latLng(item.map.latitude, item.map.longitude), item.map.zoom, { animation: true });
   }
 
   updateProba() {
@@ -304,21 +318,30 @@ class RootMap extends React.Component {
     if (this.activeLayer !== null) {
       this.mainMap.removeLayer(this.activeLayer)
     }
-    let layer = createMapLayer(_.find(Store.current.instances, {name: Store.current.selectedResult.name}), activeLayerLbl, this.progress)
+    const layerFromInstance = _.find(Store.current.instances, {name: Store.current.selectedResult.name})
+    if (!layerFromInstance) {
+      Store.setSelectedResult({})
+      Store.setSearchResults([])
+      this.clearPolygons()
+      return // selected layer was not found in user instances
+    }
+    let layer = createMapLayer(layerFromInstance, activeLayerLbl, this.progress)
     this.activeLayer = layer
-    if (this.state.showClip) {
+    if (Store.current.mainTabIndex === 2) {
       this.activeLayer.setParams(this.getUpdateParams())
       if (!this.mainMap.hasLayer(this.activeLayer)) {
         this.activeLayer.options.pane = activeLayerLbl
         this.activeLayer.addTo(this.mainMap)
+        this.resetAllLayers()
       }
     }
   }
 
   // App.js handles in onCompareChange
-  addPinLayers = (isCompare, tabIndex) => {
+  addPinLayers = () => {
+    const {mainTabIndex: tabIndex, compareMode: isCompare} = Store.current
     if (isCompare) {
-      this.mainMap.removeLayer(this.activeLayer)
+      this.activeLayer != undefined ? this.mainMap.removeLayer(this.activeLayer) : '';
       let pins = [...Store.current.pinResults]
       pins.reverse().forEach(item => {
         let {instances} = Store.current
@@ -334,12 +357,15 @@ class RootMap extends React.Component {
       if (this.activeLayer && tabIndex === 2) {
         this.activeLayer.options.pane = activeLayerLbl
         this.activeLayer.addTo(this.mainMap)
+        this.resetAllLayers()
       }
       Store.setCompareMode(false)
     }
   }
 
   setOverlayParams = (arr, index) => {
+    //if not in compare mode, don't do anything
+    if (!Store.current.compareMode) return
     let mapIndex = Store.current.pinResults.length - (index + 1)
     if (Store.current.compareModeType === 'opacity') {
       this.compareLayers[mapIndex].setOpacity(arr[1])
@@ -349,66 +375,51 @@ class RootMap extends React.Component {
   }
 
   getUpdateParams(options, item) {
-    let {datasource, selectedResult, compareMode} = Store.current
-    let rawData = selectedResult.properties.rawData
+    let {datasource, selectedResult, compareMode, evalscript} = Store.current
+    let rawData = item ? item.properties.rawData : selectedResult.properties.rawData
     let activeLayer = this.activeLayer
     let obj = {}
     let time = rawData.time
     let evalS = ''
     let evalSource = ''
     obj.format = 'image/png'
-    obj.errorTileUrl = errorTileBg
     obj.pane = compareMode ? compareLayerLbl : activeLayerLbl
     obj.transparent = true
-    obj.maxcc = Store.current.maxcc
-    obj.layers = this.getLayersString(item)
-    if (this.isCustom() && !compareMode) {
-      let storeEvalScript = Store.current.evalscript[datasource]
-      if (storeEvalScript !== '' && storeEvalScript !== undefined) {
-        evalS = storeEvalScript
-        evalSource = activeLayer.options.additionalParams.evalsource
-      }
-      obj.evalscript = evalS
-      obj.evalsource = evalSource
-    } else {
-        delete activeLayer.wmsParams.evalscript
-    }
+    obj.maxcc = 100
+    obj.layers = getLayersString(item)
     if (item) {
-      if (this.isCustom(item)) {
+      if (isCustom(item)) {
         if (item.evalscript) {
             obj.evalscript = item.evalscript
         }
       } else {
-        delete activeLayer.wmsParams.evalscript
+        if (activeLayer) {
+          delete activeLayer.wmsParams.evalscript
+        }
       }
       time = item.properties.rawData.time
-      obj.evalsource = options.additionalParams.evalsource
-      obj.layers = item.preset
-      if (item.preset === 'CUSTOM') {
-        if (item.evalscript) {
-            obj.evalscript = item.evalscript
-        }
-        obj.layers = Object.values(item.layers).join(",")
+      obj.evalsource = evalSourcesMap[item.name]
+    } else {
+      if (isCustom() && !compareMode) {
+        obj.evalscript = evalscript[datasource]
+        obj.evalsource = evalSourcesMap[selectedResult.name]
+      } else {
+          delete activeLayer.wmsParams.evalscript
       }
     }
 
     obj.time = `${time}/${time}`
     delete obj.additionalParams
-    return obj
-  }
-
-  handleMoveEnd() {
-    if (Store.current.datasources.length === 1 && Store.current.zoom > 6) {
-      queryAvailableDates()
-    } else {
-      //it will be too much requests to query through all datasources for available dates
-      Store.setAvailableDates([])
-    }
+    return _.cloneDeep(obj)
   }
 
   render() {
     return <div style={styles.map} id={this.props.mapId}>
-      <a id="aboutSentinel" target="_blank" href="http://www.sentinel-hub.com">About Sentinel Hub</a>
+      <div id="aboutSentinel">
+        <a href="http://www.sentinel-hub.com/apps/eo_browser" target="_blank">About EO Browser</a>
+        <a href="mailto:info@sentinel-hub.com?Subject=EO%20Browser%20Feedback">Contact us</a>
+        <a href="http://www.sentinel-hub.com/apps/wms" target="_blank">Get data</a>
+      </div>
     </div>
   }
 }

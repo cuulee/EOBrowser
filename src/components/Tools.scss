@@ -7,10 +7,10 @@
   top: 10px;
   background: $mainLight;
   z-index: 1;
-  width: 440px;
+  width: $toolsWidth;
   color: $textColor;
   box-shadow: 0 2px 5px #000;
-  transition: all ease 0.7s;
+  transition: all ease $toolsTransitionSpeed;
 
   &.hidden {
     margin-left: -120%;
@@ -23,6 +23,39 @@
 
     .btn {
       margin: 3px;
+    }
+  }
+
+  footer.imageDownload {
+    text-align: left;
+    padding: 10px;
+
+    div {
+      &.container {
+        margin: 10px;
+        margin-left: 0;
+        margin-right: 0;
+      }
+
+      .left {
+        float: left;
+        width: 50%;
+      }
+
+      .right {
+        float:right;
+        width: 50%;
+
+        > * {
+          float: right;
+        }
+      }
+
+      
+
+      .clearBoth {
+        clear: both;
+      }
     }
   }
 
@@ -110,7 +143,7 @@
   padding: 5px;
   border-top: 1px solid #aaa;
 
-  .removePin {
+  .removePin, .zoomToPin {
     float: right;
   }
 
@@ -208,28 +241,34 @@
 }
 
 .floatItem {
-  position: absolute;
-  top: 16px;
-  left: 384px;
+  position: relative;
+  /*top: 16px;*/
+  /*left: 384px;*/
   background: $mainLight;
   padding: 0;
   color: #fff;
   margin: 0;
-  height: 36px;
+  /*height: 36px;*/
+  height: $controlsHeight;
   border: none;
   overflow: visible;
   box-shadow: 0 2px 5px #000;
 
   i {
-    width: 36px;
-    height: 36px;
+    /*width: 36px;*/
+    /*height: 36px;*/
+    width: $controlsHeight;
+    height: $controlsHeight;
     background: $mainDark;
     color: #fff;
     text-align: center;
-    line-height: 34px;
+    /*line-height: 34px;*/
+    line-height: $controlsHeight - 2px;
 
     & + span {
-      padding: 0 8px;
+      /*padding: 0 8px;*/
+      font-size: 15px;
+      padding: 0 16px;
     }
   }
 }
@@ -247,6 +286,10 @@
     margin-left: 10px;
     font-weight: normal;
     color: $textColor;
+
+    &.leaveMeAlone {
+      margin-left: 0;
+    }
   }
   .tileActions {
     float: right;
@@ -349,8 +392,10 @@ div.rc-slider {
 }
 
 #searchBox {
-  left: auto;
-  right: 80px;
+  display: inline-block;
+  margin-right: $basicMargin;
+  /*left: auto;*/
+  /*right: 80px;*/
 }
 #toggleSettings {
   display: block;
@@ -364,6 +409,11 @@ div.rc-slider {
   cursor: pointer;
   z-index: 2;
   transition: all ease 0.4s;
+
+  &.hidden {
+    left: 16px;
+    top: 11px;
+  }
 
   i {
     margin: 5px;
@@ -391,20 +441,21 @@ div.rc-slider {
 }
 @media screen and (max-width: 1100px) {
   #searchBox {
-    top: 66px;
+    /*top: 66px;*/
   }
 }
 
 @media screen and (max-width: 700px) {
   #tools {
-    width: calc(100% - 80px);
+    /*width: calc(100% - 80px);*/
+    width: calc(100% - 72px);
   }
   .floatItem {
     z-index: 1;
     box-shadow: none;
-    top: 76px;
-    left: auto;
-    right: 10px;
+    /*top: 76px;*/
+    /*left: auto;*/
+    /*right: 10px;*/
     border: 1px solid $mainMedium;
     & > i {
       cursor: pointer;
@@ -444,10 +495,10 @@ div.rc-slider {
     margin-top: 90px;
   }
   #searchBox {
-    left: auto;
-    z-index: 2;
-    right: 12px;
-    top: 70px;
+    /*left: auto;*/
+    /*z-index: 2;*/
+    /*right: 12px;*/
+    /*top: 70px;*/
   }
 
   .tabs-menu > li > a > * {

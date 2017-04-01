@@ -2,9 +2,14 @@ import React from 'react'
 import _   from 'lodash'
 import dragula from 'react-dragula'
 import 'react-dragula/dist/dragula.min.css'
-import 'style!css!sass!./bands.scss';
+import './bands.scss';
 
 class BandsPanel extends React.Component {
+
+  constructor(props) {
+    super(props)
+    this.dragula = null
+  }
 
   getChannel(value, key) {
     return this.props.channels.filter(obj => obj[key] === value)[0]
@@ -19,6 +24,13 @@ class BandsPanel extends React.Component {
     }
   }
 
+  componentWillUnmount() {
+    if (this.dragula) {
+      this.dragula.destroy()
+    }
+  }
+  
+
   componentDidMount() {
     let colorsHolder = this.refs.colorsHolder;
     let colTarR = this.refs.colTarR;
@@ -26,7 +38,7 @@ class BandsPanel extends React.Component {
     let colTarB = this.refs.colTarB;
 
     let layers = this.props.layers;
-    dragula([colorsHolder, colTarR, colTarG, colTarB], {
+    this.dragula = dragula([colorsHolder, colTarR, colTarG, colTarB], {
       moves: function (el, target) {
         return target === colorsHolder
       },

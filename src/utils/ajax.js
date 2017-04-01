@@ -10,7 +10,7 @@ export function loadGetCapabilities(instanceObj) {
     var parseString = require('xml2js').parseString;
     let instanceName = instanceObj.name,
         wmsUrl = instanceObj.additionalParams.wmsUrl
-    request.get(`${wmsUrl}?SERVICE=WMS&REQUEST=GetCapabilities`)
+    request.get(`${wmsUrl}?SERVICE=WMS&REQUEST=GetCapabilities&time=${new Date().valueOf()}`)
       .accept('xml')
       .parse(xml2jsParser)
       .end((err, res) => {
@@ -23,7 +23,8 @@ export function loadGetCapabilities(instanceObj) {
               for (let l in layers) {
                 if (layers.hasOwnProperty(l)) {
                   let layerName = layers[l].Name[0]
-                  if (layerName === "FILL") break
+                  const splitName = layerName.split(".")[1]
+                  if (layerName === "FILL" || splitName === "FILL") break
 
                   if (myRegexp.test(layerName)) {
                     //fill bands
@@ -37,7 +38,7 @@ export function loadGetCapabilities(instanceObj) {
                     presets[layerName] = {
                       name: layers[l].Title[0],
                       desc: layers[l].Abstract !== undefined ? layers[l].Abstract[0] : '',
-                      image: `${wmsUrl}&SERVICE=WMS&REQUEST=GetMap&show&LAYERS=${layerName}&BBOX=-19482,6718451,-18718,6719216&MAXCC=20&WIDTH=40&HEIGHT=40&gain=1&FORMAT=image/jpeg&bgcolor=00000000&transparent=1&TIME=2015-01-01/2016-08-04`
+                      image: `http://${wmsUrl}&SERVICE=WMS&REQUEST=GetMap&show&LAYERS=${layerName}&BBOX=-19482,6718451,-18718,6719216&MAXCC=20&WIDTH=40&HEIGHT=40&gain=1&FORMAT=image/jpeg&bgcolor=00000000&transparent=1&TIME=2015-01-01/2016-08-04`
                     }
                   }
                 }
@@ -64,6 +65,36 @@ export function loadGetCapabilities(instanceObj) {
   })
 }
 
+export function loadProbaCapabilities() {
+  return new Promise((resolve, reject) => {
+    let parseString = require('xml2js').parseString;
+    request.get('https://proba-v-mep.esa.int/applications/geo-viewer/app/mapcache/wmts?service=WMTS&request=GetCapabilities')
+      .accept('xml')
+      .parse(xml2jsParser)
+      .end((err, res) => {
+        if (res && res.ok) {
+          parseString(res.text, function (err, result) {
+            if (result) {
+              let probaLayers = {}
+              result.Capabilities.Contents[0].Layer.forEach(layer => {
+                const {
+                  ['ows:Title']: title, 
+                  Dimension: dates}
+                 = layer
+                 probaLayers[title] = {dates: dates[0].Value}
+              })
+              Store.setProbaLayers(probaLayers)
+            } else if (err) {
+              reject(err)
+            }
+          });
+        } else if (err) {
+            reject(err)
+        }
+      })
+  })
+}
+
 export function queryAvailableDates() {
   let {datasources} = Store.current
   if (datasources.length === 1) {
@@ -72,8 +103,9 @@ export function queryAvailableDates() {
 }
 
 export function logout() {
+  const isAws = process.env.REACT_APP_TARGET === 'aws'
   return new Promise((resolve, reject) => {
-    request.get(`http://services.eocloud.sentinel-hub.com/v1/sessions/logout`).end((err, res) => {
+    request.get(`http://services.sentinel-hub.com/wms/configuration/v1/sessions/logout`).end((err, res) => {
       if (res && res.ok) {
         resolve(res.body)
       }
@@ -86,8 +118,8 @@ export function logout() {
 
 export function queryIndex(onlyDates, datasource, queryParams) {
   const activeLayer = _.find(Store.current.instances, {name: datasource})
-  if (activeLayer === undefined) {
-    return
+  if (activeLayer === undefined || (activeLayer.name === 'Sentinel-3') && onlyDates) {
+    return Promise.reject()
   }
   queryParams = _.cloneDeep(queryParams)
   let bounds = Store.current.mapBounds
@@ -111,14 +143,23 @@ export function queryIndex(onlyDates, datasource, queryParams) {
     let today =  moment().hour(23).minute(59)
     let maxDate = today.format("YYYY-MM-DDTHH:mm:ss");
     let minDate = onlyDates ? Store.current.minDate.format(Store.current.dateFormat) : moment(Store.current.dateFrom).format("YYYY-MM-DDTHH:mm:ss");
-    let url = activeLayer.additionalParams.indexService
+    let url = _.get(activeLayer,'additionalParams.indexService')
     let pageSize = 50
+    let isFromAWS = datasource.includes('USGS')
     let isSentinel = datasource.includes('Sentinel')
+    let isSentinel3 = datasource === 'Sentinel-3'
     if (onlyDates) {
-      if (isSentinel) {
-        url = "http://services.sentinel-hub.com/index/v2"
+      if (queryParams) {
+        const {from: dateFrom, to: dateTo} = queryParams  
+        minDate = dateFrom
+        maxDate = dateTo
+      } else {
+        minDate = isSentinel || datasource.includes('Landsat 8') ? '2015-01-01' : '1983-01-01'
+        if (!isSentinel || datasource.includes(['Landsat 5, Landsat 7'])) {
+          maxDate = '2003-01-01'
+        }
       }
-      url += `/${isSentinel ? 'finddates' : 'dates'}/?timefrom=${minDate}&timeto=${maxDate}&maxcc=${Store.current.maxcc / 100}`
+      url += `/${(isFromAWS || isSentinel) ? 'finddates' : 'dates'}/?timefrom=${minDate}&timeto=${maxDate}&maxcc=${Store.current.maxcc / 100}`
     } else {
       var offset = 0
       if (!queryParams.firstSearch) {
@@ -152,25 +193,50 @@ export function queryIndex(onlyDates, datasource, queryParams) {
             }
             let results = []
             res.body.tiles.forEach((tile, i) => {
-              let previewUrl = isSentinel
-                ? activeLayer.additionalParams.previewPrefix+"/"+tile.pathFragment+'/preview.jpg'
-                : (tile.previewUrl === '') ? '' : (tile.previewUrl + '.JPG')
-              let sourceUrl = ""
-              sourceUrl += isSentinel ? "/eodata/Sentinel-2/"+tile.eoPathFragment : tile.pathFragment
+              // this is mainly used for ResultItem.js to show various info
+              let previewUrl = ''
+              if (!isSentinel3) {
+                const suffix = datasource.includes('USGS') ? '_thumb_small.jpg' : '/preview.jpg'
+                previewUrl = (isSentinel || isFromAWS)
+                  ? activeLayer.additionalParams.previewPrefix + "/" + tile.pathFragment + suffix
+                  : (tile.previewUrl === '') ? '' : (tile.previewUrl + '.JPG')
+              }
+              let sourcePath = ""
+              let isS2 = datasource === 'Sentinel-2'
+              if (!isS2) {
+                sourcePath += tile.pathFragment
+              } else if (isSentinel) {
+                sourcePath += isS2 ? "/eodata/Sentinel-2/"+tile.eoPathFragment : tile.pathFragment
+              }
               if (isSentinel) {
-                sourceUrl = sourceUrl.split(".SAFE")[0]
+                sourcePath = sourcePath.split(".SAFE")[0]
               } else {
-                sourceUrl = sourceUrl.substring(0, sourceUrl.lastIndexOf("/") + 1);
+                sourcePath = sourcePath.substring(0, sourcePath.lastIndexOf("/") + 1);
+              }
+              if(isSentinel3) {
+                let path = tile.pathFragment;
+                let pattern = /^.*Sentinel-3\/(.*)\/(.*)\.SEN3$/i;
+                let matches = pattern.exec(path);
+
+                if(matches !== null) {
+                  previewUrl = `http://finder.eocloud.eu/files/Sentinel-3/${matches[1]}/${matches[2]}.SEN3/${matches[2]}-ql.jpg`;
+                } 
               }
               let item = {
                 time: moment(tile.sensingTime).format("YYYY-MM-DD"),
+                sensingTime: moment(tile.sensingTime).format("h:mm:ss A"),
                 cloudCoverage: tile.cloudCoverPercentage,
-                sourcePath: sourceUrl,
-                path: previewUrl,
+                sourcePath: sourcePath,
+                previewUrl: previewUrl,
                 datasource: datasource,
                 prettyName: datasource.replace("_", ""),
                 additionalParams: activeLayer.additionalParams,
                 id: tile.id,
+              }
+              if (isS2) {
+                item.crs = "EPSG:"+tile.tileGeometry.crs.properties.name.split("::")[1]
+                const mgrsPath = tile.pathFragment.split("/")
+                item.mgrs = mgrsPath[1]+mgrsPath[2]+mgrsPath[3]
               }
               if (tile.area) item['area'] = Number(tile.area / 1000000).toFixed(2)
               if (tile.sunElevation) item['sunElevation'] = tile.sunElevation

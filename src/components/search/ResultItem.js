@@ -1,5 +1,6 @@
 import React, {PropTypes} from 'react'
 import request from 'superagent'
+import AddPin from '../AddPin'
 
 const PolySvg = () => (<svg height="16px" version="1.1" viewBox="0 0 20 20" width="20px" className="umbrella" xmlns="http://www.w3.org/2000/svg">
   <g fillRule="evenodd" stroke="none" strokeWidth="2" transform="translate(-336.000000, -480.000000)">
@@ -36,30 +37,21 @@ class ResultItem extends React.Component {
     let item = geom.properties.rawData
     let sourcePath = item.sourcePath
     let index = geom.properties.index
+    let isS2 = item.datasource === 'Sentinel-2'
     return (<div
       className="resultItem"
       onMouseOver={() => this.props.onResultClick(index, false)}>
-      {item.path !== '' ? <img src={item.path} role="presentation"/> : <div className="noImage">No preview available</div> }
+      {item.previewUrl !== '' ? <img src={item.previewUrl} role="presentation"/> : <div className="noImage">No preview available</div> }
       <div className="details">
-        <div title="Sensing time"><i className="fa fa-calendar"></i>{item.time}</div>
-        <div title="Cloud coverage"><i className="fa fa-cloud"></i>{item.cloudCoverage} %</div>
-        {item.area && <div title="Surface area"><PolySvg/>{item.area} km<sup>2</sup></div>}
-        {item.sunElevation && <div title="Sun elevation"><i className="fa fa-sun-o"></i>{item.sunElevation.toFixed(1)} %</div>}
-        {sourcePath &&
-          <a
-            className={`pathLinkIcon ${this.state.linkVisible && 'active'}`}
-            onClick={() => this.toggleLinksPanel(item.id, item.datasource.includes('Sentinel'))}>
-              <i className="fa fa-link"></i>
-          </a>
-        }
+        <div title="Sensing time"><i className="fa fa-calendar" />{item.time}</div>
+        <div title="Sensing time"><i className="fa fa-clock-o" />{item.sensingTime}</div>
+        {item.cloudCoverage !== -1 && <div title="Cloud coverage"><i className="fa fa-cloud" />{item.cloudCoverage} %</div>}
+        {item.sunElevation && <div title="Sun elevation"><i className="fa fa-sun-o" />{item.sunElevation.toFixed(1)} %</div>}
+        {isS2 && item.crs && <div title="Tile CRS"><i className="fa fa-file-text-o" />{item.crs}</div>}
+        {isS2 && item.mgrs && <div title="MGRS location"><i className="fa fa-map-o" />{item.mgrs}</div>}
+        <AddPin pin={geom}/>
         <a className='btn' onClick={() => this.props.onResultClick(index, true, geom)}>Visualize</a>
-
       </div>
-      {this.state.linkVisible && <div className="showLinkPanel">
-        EO Cloud path:
-        <input ref="linkUrl" className="urlInput" defaultValue={sourcePath} readOnly={true} onFocus={() => this.refs.linkUrl.select()}/>
-        {this.state.scihubLink !== '' && <div>SciHub link: <a className="scihubLink" href={this.state.scihubLink} target="_blank">{this.state.scihubLink}</a></div>}
-      </div>}
     </div>)
   }
 }

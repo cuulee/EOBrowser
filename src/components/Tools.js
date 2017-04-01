@@ -8,21 +8,26 @@ import ResultsPanel from './search/Results'
 import SearchForm from './search/SearchForm'
 import { Tab, Tabs, TabList, TabPanel } from 'react-tabs';
 import Store from '../store'
+import esaLogo from './esa.png'
 import {queryIndex, logout} from '../utils/ajax'
-import {getMultipliedLayers} from '../utils/utils'
+import {getMultipliedLayers, getActivePreset, b64EncodeUnicode, b64DecodeUnicode} from '../utils/utils'
+import AddPin from './AddPin'
 import {connect} from 'react-redux'
+import moment from 'moment'
 import _ from 'lodash'
 import Rodal from 'rodal'
 import 'react-toggle/style.css'
 import 'rc-slider/assets/index.css'
-import 'style!css!sass!./Tools.scss';
+
+import DownloadPanel from './DownloadPanel'
+
+import './Tools.scss'
 
 class Tools extends React.Component {
   constructor(props) {
     super(props);
     this.state = {
       tabHeight: window.innerHeight,
-      tabIndex: 0,
       searchError: '',
       queryParams: '',
       isSearching: false,
@@ -31,13 +36,32 @@ class Tools extends React.Component {
       firstSearch:true,
       resultsFound: false
     };
-    this.mouseOverLink = false;
   }
 
   handleResize = () => {
-    let footer = this.refs.footer !== undefined ? this.refs.footer.offsetHeight : 0
-    this.setState({
-      tabHeight: window.innerHeight - (ReactDOM.findDOMNode(this.refs.tabsPanel.refs.tablist).offsetHeight + 45 + footer + 70),
+    let downloadPanelNode = null
+    
+    try {
+      downloadPanelNode = ReactDOM.findDOMNode(this.downloadPanel)
+    } catch(e) {}
+    
+    let footer = downloadPanelNode !== null ? downloadPanelNode.offsetHeight : 0
+
+    // which tab is item
+    // footer is only !=0 if we are on tab 2 - Visualization
+    const {mainTabIndex} = Store.current
+
+    if(mainTabIndex !== 2) {
+      footer = 0
+    }
+
+    let bottomMargin = 32
+    if(window.innerWidth < 701) {
+      bottomMargin = 47
+    }
+
+    this.setState({                    // dynamic                                                          + logo + margin-top + dynamic footer + margin-bottom
+      tabHeight: window.innerHeight - (ReactDOM.findDOMNode(this.refs.tabsPanel.refs.tablist).offsetHeight + 48 + 10 + footer + 34 + bottomMargin),
     });
     this.props.onResize()
   }
@@ -89,13 +113,15 @@ class Tools extends React.Component {
   }
 
   handleSelect = (index, last) => {
-    this.setState({tabIndex: index})
-    this.props.onTabSelect(index)
+    setTimeout(() => {
+      this.handleResize()
+    }, 200)
+    Store.setTabIndex(index)
+    index !== 3 && Store.setCompareMode(false)
   }
 
   doSearch = (queryParams, datasources) => {
     Store.clearSearchResults()
-    Store.setSelectedResult([])
     Store.setSearchingIsOn(false)
     Store.setDatasources(datasources)
     this.setState({isSearching: true, resultsFound: false})
@@ -114,7 +140,8 @@ class Tools extends React.Component {
       success.forEach(i => {
         Store.setSearchResults(i.results, i.datasource, i.params)
         if (i.results.length > 0) {
-          this.setState({resultsFound: true, tabIndex: 1})
+          Store.setTabIndex(1)
+          this.setState({resultsFound: true})
         }
       })
       this.setState({
@@ -124,6 +151,7 @@ class Tools extends React.Component {
         firstSearch: false
       })
       Store.setSearchingIsOn(true)
+      document.getElementById("react-tabs-3").scrollTop = 0 //we need to reset scroll to top once we perform search
       this.props.onFinishSearch(Store.current.searchResults)
     }, e => {
       this.setState({searchError: e.message, isSearching: false})
@@ -142,9 +170,9 @@ class Tools extends React.Component {
   toggleMode(datasource) {
     let {layers, views, evalscript} = Store.current
     Store.setCurrentView(datasource, this.isScriptView(datasource) ? views.BANDS : views.SCRIPT)
-    let isEvalScriptFromLayers = evalscript[datasource] === btoa("return [" + getMultipliedLayers(layers[datasource]) + "]") || evalscript[datasource] === undefined
+    let isEvalScriptFromLayers = evalscript[datasource] === b64EncodeUnicode("return [" + getMultipliedLayers(layers[datasource]) + "]") || evalscript[datasource] === undefined
     if (this.isScriptView(datasource) && isEvalScriptFromLayers) {
-      Store.setEvalScript(datasource, btoa("return [" + getMultipliedLayers(layers[datasource]) + "]"))
+      Store.setEvalScript(datasource, b64EncodeUnicode("return [" + getMultipliedLayers(layers[datasource]) + "]"))
       if (!isEvalScriptFromLayers) {
         Store.refresh()
       }
@@ -154,18 +182,24 @@ class Tools extends React.Component {
   clearData = () => {
     Store.clearSearchResults()
     Store.setSelectedResult({})
-    this.setState({tabIndex: 0, isSearching: false, firstSearch: true, resultsFound: false})
+    Store.setTabIndex(0)
+    this.setState({isSearching: false, firstSearch: true, resultsFound: false})
     this.props.onClearData()
   }
 
   loadMore = (ds) => {
+    this.setState({isSearching: true})
     let query = Store.current.searchParams[ds]
     query.firstSearch = false
     query.multiplyOffset++
     queryIndex(false, ds, query).then(res => {
+        this.setState({isSearching: false})
         Store.setSearchResults(res.results, ds, res.params)
         this.props.onFinishSearch(Store.current.searchResults)
-    }, e => console.error(e.message))
+    }, e => {
+      console.error(e.message)
+      this.setState({isSearching: false})
+    })
   }
 
   clearFilterData = () => {
@@ -185,24 +219,21 @@ class Tools extends React.Component {
     if (activate && geom !== undefined) {
       this.clearFilterData()
       Store.setSelectedResult(geom)
+      Store.setTabIndex(2)
       this.setState({tabIndex: 2})
     }
   }
 
   activateResult = (newPreset) => {
     let {selectedResult, datasource, preset} = Store.current
-    let newItem = _.clone(selectedResult)
-    newItem.preset = preset[datasource]
+    let newItem = _.cloneDeep(selectedResult)
+    newItem.preset = newPreset
     Store.setPreset(datasource, newPreset)
     Store.setSelectedResult(newItem)
   }
 
   isCustom() {
-    return this.getActivePreset() === 'CUSTOM'
-  }
-
-  getActivePreset() {
-    return Store.current.preset[Store.current.datasource]
+    return getActivePreset() === 'CUSTOM'
   }
 
   onComparePins = () => {
@@ -211,64 +242,72 @@ class Tools extends React.Component {
   }
 
   getTileInfo() {
+    const {isActiveLayerVisible, pinResults, selectedResult} = Store.current
     let data = _.get(Store.current, 'selectedResult.properties.rawData')
     return <div className="visualizationInfoPanel">
       <div className="tileActions">
-        <a onClick={this.props.onZoomTo} title="Zoom to tile"><i className="fa fa-search"></i></a>
-        {!_.includes(Store.current.pinResults, Store.current.selectedResult) && <a onClick={this.addToPins} title="Pin to your favourite items"><i className="fa fa-thumb-tack"></i></a>}
+        {selectedResult.geometry && <a onClick={this.props.onZoomTo} title="Zoom to tile"><i className="fa fa-search"></i></a>}
+        <AddPin onAddToPin={this.onAddToPin} pin={selectedResult} />
+        <a onClick={() => Store.toggleActiveLayer(!isActiveLayerVisible)}>
+        <i 
+          title={isActiveLayerVisible ? 'Hide layer' : 'Show layer'} 
+          className={`fa fa-eye${isActiveLayerVisible ? '-slash' : ''}`} />
+        </a>
       </div>
-      <b>Satellite:</b> {data.prettyName}<br />
-      <b> Date:</b> {data.time}
+      <b className="leaveMeAlone">Satellite:</b> {selectedResult.name}<br />
+      <b className="leaveMeAlone">Date:</b> {data.time}
     </div>
   }
 
   downloadFullTiff = (allow) => {
     if (allow) {
-      Store.generateFullTile()
+      Store.generateImageLink(true)
       this.setState({downloadingTiff: true})
       window.open(Store.current.imgTiffUrl, "_blank")
     } else {
-      Store.generateWmsUrl()
+      Store.generateImageLink(false)
       window.open(Store.current.imgWmsUrl, "_blank")
     }
   }
-  generateDownloadPanel()  {
-    let {squaresPerMtr, zoom} = Store.current
-    let disabledFullRes = squaresPerMtr > 20000000
-    return (<footer>
-      <button onClick={() => this.downloadFullTiff(false)} className="btn"><i className="fa fa-image"></i>Download image</button>
-      <button
-        disabled={disabledFullRes}
-        title={zoom <= 11 && "Zoom in since full resolution tiff can only be generated for tiles below 5000x5000 resolution"}
-        onClick={() => this.downloadFullTiff(!disabledFullRes)} className="btn"><i className="fa fa-image"></i>Download FULL-RES image</button>
-    </footer>)
-  }
 
-  addToPins = () => {
-    Store.addPinResult()
-    this.setState({tabIndex: 3})
+  onAddToPin = () => {
+    Store.setTabIndex(3)
   }
   clearPins = () => {
     Store.clearPins()
     Store.setCompareMode(false)
-    this.setState({tabIndex: 2})
+    const selectResult = Store.current.selectedResult
+    this.setState({tabIndex: selectResult ? 2 : 3})
+  }
+
+  // here we pass either from-to date or @param isFirst as first parameter to indicate where to query 
+  queryActiveMonth = (dateFrom,dateTo) => {
+    if (!Store.current.instances) return
+    if (dateTo) {
+      queryIndex(true, Store.current.datasources[0], {from: dateFrom, to: dateTo})
+    } else {
+      const newDateFrom = moment(Store.current[dateFrom ? 'dateFrom' : 'dateTo']).startOf('month').format("YYYY-MM-DD"),
+            newDateTo = moment(Store.current[dateFrom ? 'dateFrom' : 'dateTo']).endOf('month').format("YYYY-MM-DD")
+      queryIndex(true, Store.current.datasources[0], {from: newDateFrom, to: newDateTo})
+    }
   }
 
   render() {
-    let tabs = [['search', 'Search'], ['sliders', 'Results'], ['paint-brush', 'Visualization'], ['pinsPanel', 'Pins'] ];
+    let tabs = [['search', 'Search'], ['list', 'Results'], ['paint-brush', 'Visualization'], ['pinsPanel', 'Pins'] ];
     let {
-      datasource, zoom, datasources, instances, probaLayer, layers, channels,currView, views,
+      datasource, zoom, datasources, instances, probaLayer, layers, channels,currView, views, probaLayers,
       searchParams, searchResults, selectedResult, preset,presets, evalscript, searchFilterResults,
-      compareMode, compareModeType, pinResults } = Store.current
+      compareMode, compareModeType, pinResults, mainTabIndex, size } = Store.current
     let evalS = evalscript[datasource] || ""
     let hasSelectedResult = !_.isEmpty(selectedResult)
-    let showNotification = this.state.tabIndex === 2 && hasSelectedResult
-    let minZoom = hasSelectedResult ? selectedResult.properties.rawData.additionalParams.minZoom : 1,
+    let showNotification = mainTabIndex === 2 && hasSelectedResult
+    let minZoom = hasSelectedResult && selectedResult.properties.rawData.additionalParams ? selectedResult.properties.rawData.additionalParams.minZoom : 1,
         maxZoom = 16
     if (datasource === 'proba-v') {
       showNotification = true
     }
     let currentZoom = Number(zoom)
+    const [wWidth, wHeight] = size
 
     let panels = [
       <SearchForm
@@ -276,10 +315,13 @@ class Tools extends React.Component {
         preset={preset[datasource]}
         datasource={datasource}
         probaLayer={probaLayer}
+        probaLayers={probaLayers}
         changeProba={Store.setProbaParams}
         mapZoom={currentZoom}
+        onDatePickerNavClick={this.queryActiveMonth}
         doSearch={(params, ds) => this.doSearch(params, ds, true)}
         loading={this.state.isSearching}
+        onExpandDate={isFirst => this.queryActiveMonth(isFirst)}
         error={this.state.searchError}
         empty={!this.state.resultsFound}
         instances={instances}
@@ -306,11 +348,14 @@ class Tools extends React.Component {
           channels={channels[datasource]}
           isBasicMode={currView[datasource] === views.PRESETS}
           presets={presets[datasource]}
-          preset={preset[datasource]}
-          cmValue={atob(evalS.replace(/==/g, ''))}
+          cmValue={b64DecodeUnicode(evalS)}
           onBack={() => Store.setCurrentView(datasource, views.PRESETS)}
           onWriteBase64={this.storeBase64}
-          onCMupdate={(newCode) => Store.setEvalScript(datasource, btoa(newCode))}
+          onCMRefresh={(newCode) => {
+              const hasEqual = newCode.includes("=")
+              Store.setEvalScript(datasource, hasEqual ? newCode : newCode + "=") 
+            }
+          }
           onActivate={this.activateResult}
           onDrag={(layers) => Store.setLayers(datasource, layers)}
           onToggleMode={() => this.toggleMode(datasource)}
@@ -324,6 +369,7 @@ class Tools extends React.Component {
           onCompare={this.onComparePins}
           onClearPins={this.clearPins}
           onRemove={(i) => Store.removePin(i)}
+          onZoomToPin={this.props.onZoomToPin}
           onOpacityChange={this.props.onOpacityChange}
           onToggleCompareMode={e => Store.setCompareModeType(e)}
           items={pinResults} />
@@ -331,13 +377,15 @@ class Tools extends React.Component {
   ];
 
     Tabs.setUseDefaultStyles(false);
+
     return <div id="tools" className={this.props.className}>
-      <Header withBg
+      <Header showLogin={true}
             user={this.props.user}
-              onLogout={() => logout().then(this.props.onLogout)}
+            onShowLogin={() => Store.showLogin(true)}
+            onLogout={() => logout().then(this.props.onLogout)}
       />
       <Tabs
-        selectedIndex={this.state.tabIndex}
+        selectedIndex={mainTabIndex}
         onSelect={this.handleSelect}
         forceRenderTabPanel={true}
         ref="tabsPanel">
@@ -357,15 +405,24 @@ class Tools extends React.Component {
         </TabList>
         {panels.map((panel, i) => (
           <TabPanel
+            id={`tabPanel-${i}`}
             key={i}
             className={tabs[i][0]}
-            style={{maxHeight: this.state.tabHeight, overflow: i === 0 ? 'visible' : 'auto'}}>
+            style={{maxHeight: this.state.tabHeight, overflow: (i === 0 && wHeight > 660 && wWidth > 600) ? 'visible' : 'auto'}}>
             {panel}
           </TabPanel>) )}
       </Tabs>
       {showNotification && currentZoom < minZoom && <NotificationPanel msg='Zoom in to view data' type='info' />}
       {showNotification && currentZoom > maxZoom && <NotificationPanel msg='Zoom out to view data' type='info' />}
-      {showNotification && hasSelectedResult && this.generateDownloadPanel()}
+      
+      {showNotification && 
+       hasSelectedResult && 
+       <DownloadPanel ref={(downloadPanel) => { this.downloadPanel = downloadPanel }} downloadFunc={this.downloadFullTiff}/>}
+
+      <div className="poweredby">
+        Powered by <a href="http://www.sinergise.com" target="_blank">Sinergise</a> with contributions from European Space Agency
+        <a className="esa" href="http://www.esa.int/" target="_blank"><img src={esaLogo} alt="ESA" /></a>
+      </div>
       <Rodal
         animation="slideUp"
         width={400}
@@ -407,4 +464,4 @@ Tools.propTypes = {
   onTabSelect: React.PropTypes.func,
 };
 
-export default connect(store => store)(Tools)
+export default connect(store => store, null, null, { withRef: true })(Tools)
