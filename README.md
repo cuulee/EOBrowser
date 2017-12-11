@@ -1,6 +1,6 @@
 ## About
 
-The Earth Observation Browser is a search tool for Sentinel-2 and Landsat 5,7,8 satellite imagery. It was released as open-source to bring earth observation imagery closer to its end users.
+The Earth Observation Browser is a search tool for Sentinel-1, -2, -3, Landsat 5, 7, 8, MODIS and Envisat Meris satellite imagery. It was released as open-source to bring earth observation imagery closer to its end users.
 Some features:
 - Search by date, location, source, and cloud coverage
 - Tweak imagery rendering parameters and settings on-the-fly, similar to [Sentinel Playground](http://apps.sentinel-hub.com/sentinel-playground/)
